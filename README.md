@@ -1,3 +1,7 @@
+[![version-badge][]][crate-url]
+[![docs-badge][]][docs-url]
+[![license-badge][]][crate-url]
+
 # step-machine
 
 Run your CLI programs as state machines with persistence and recovery abilities. When such a
@@ -75,4 +79,8 @@ Coins match
 Notice that, thanks to the `restore()`, our machine run from the step it was interrupted,
 knowing about the first coin landed on heads.
 
-License: MIT OR Apache-2.0
+[version-badge]: https://img.shields.io/crates/v/step-machine.svg
+[docs-badge]: https://docs.rs/step-machine/badge.svg
+[license-badge]: https://img.shields.io/crates/l/step-machine.svg
+[crate-url]: https://crates.io/crates/step-machine
+[docs-url]: https://docs.rs/step-machine
