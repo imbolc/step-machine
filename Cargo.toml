@@ -2,6 +2,14 @@
 name = "step-machine"
 version = "0.1.0"
 edition = "2018"
+description = "Run your CLI program as state machines with persistence and recovery abilities"
+readme = "README.md"
+repository = "https://github.com/imbolc/step-machine"
+license = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+doctest = false
 
 [dependencies]
 log = "0.4"
@@ -14,3 +22,4 @@ anyhow = "1"
 derive_more = "0.99"
 env_logger = "0.9"
 rand = "0.8"
+rusty-hook = "0.11"
