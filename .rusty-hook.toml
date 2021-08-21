@@ -1,5 +1,5 @@
 [hooks]
-pre-commit = "cargo readme > README.md"
+pre-commit = "cargo readme > README.md && git add README.md"
 pre-push = "cargo check --examples && cargo clippy --examples -- -D warnings && cargo fmt -- --check"
 
 [logging]
