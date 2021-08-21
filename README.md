@@ -1,6 +1,6 @@
 # step-machine
 
-Run your CLI program as state machines with persistence and recovery abilities. When such a
+Run your CLI programs as state machines with persistence and recovery abilities. When such a
 program breaks you'll have opportunity to change the external world (create a missing folder,
 change a file permissions or something) and continue the program from the step it was
 interrupted on.
