@@ -349,7 +349,7 @@ dependencies = [
 
 [[package]]
 name = "step-machine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "derive_more",
