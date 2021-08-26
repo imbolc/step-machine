@@ -44,7 +44,7 @@
 //! ```rust
 //! let init_state = FirstToss.into();
 //! let mut engine = Engine::<Machine>::new(init_state)?.restore()?;
-//! engine.drop_error();
+//! engine.drop_error()?;
 //! engine.run()?;
 //! ```
 //! We initialize the `Engine` with the first step. Then we restore the previous state if the
@@ -181,8 +181,9 @@ where
     }
 
     /// Drops the previous error
-    pub fn drop_error(&mut self) {
+    pub fn drop_error(&mut self) -> Result<()> {
         self.step.error = None;
+        self.save()
     }
 
     fn save(&self) -> Result<()> {

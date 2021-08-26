@@ -50,7 +50,7 @@ Then we start our machine like this:
 ```rust
 let init_state = FirstToss.into();
 let mut engine = Engine::<Machine>::new(init_state)?.restore()?;
-engine.drop_error();
+engine.drop_error()?;
 engine.run()?;
 ```
 We initialize the `Engine` with the first step. Then we restore the previous state if the

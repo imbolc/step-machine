@@ -11,7 +11,7 @@ fn main() -> Result<()> {
     env_logger::init();
     let init_state = FirstToss.into();
     let mut engine = Engine::<Machine>::new(init_state)?.restore()?;
-    engine.drop_error();
+    engine.drop_error()?;
     engine.run()?;
     Ok(())
 }
