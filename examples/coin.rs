@@ -9,7 +9,7 @@ type StepResult = Result<Option<Machine>>;
 
 fn main() -> Result<()> {
     env_logger::init();
-    let init_state = Machine::FirstToss(FirstToss);
+    let init_state = FirstToss.into();
     let mut engine = Engine::<Machine>::new(init_state)?.restore()?;
     engine.drop_error();
     engine.run()?;
@@ -51,13 +51,11 @@ impl State<Machine> for Machine {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct FirstToss;
-impl State<Machine> for FirstToss {
-    type Error = anyhow::Error;
-
+impl FirstToss {
     fn next(self) -> StepResult {
-        let coin = Coin::toss();
-        println!("First coin: {:?}", coin);
-        Ok(Some(SecondToss { first_coin: coin }.into()))
+        let first_coin = Coin::toss();
+        println!("First coin: {:?}", first_coin);
+        Ok(Some(SecondToss { first_coin }.into()))
     }
 }
 
@@ -65,9 +63,7 @@ impl State<Machine> for FirstToss {
 struct SecondToss {
     first_coin: Coin,
 }
-impl State<Machine> for SecondToss {
-    type Error = anyhow::Error;
-
+impl SecondToss {
     fn next(self) -> StepResult {
         let second_coin = Coin::toss();
         println!("Second coin: {:?}", second_coin);
