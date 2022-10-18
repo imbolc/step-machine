@@ -15,12 +15,8 @@ Let's toss two coins and make sure they both landed on the same side. We express
 as two states of our machine. Step logic is implemented in `State::next()` methods which
 return the next state or `None` for the last step (the full code is in `examples/coin.rs`).
 ```rust
-#[derive(Debug, Serialize, Deserialize, From)]
-enum Machine {
-    FirstToss(FirstToss),
-    SecondToss(SecondToss),
-}
 
+#[typetag::serde]
 #[derive(Debug, Serialize, Deserialize)]
 struct FirstToss;
 impl FirstToss {
@@ -31,6 +27,7 @@ impl FirstToss {
     }
 }
 
+#[typetag::serde]
 #[derive(Debug, Serialize, Deserialize)]
 struct SecondToss {
     first_coin: Coin,
@@ -48,7 +45,7 @@ impl SecondToss {
 
 Then we start our machine like this:
 ```rust
-let init_state = FirstToss.into();
+let state = FirstToss.into();
 let mut engine = Engine::<Machine>::new(init_state)?.restore()?;
 engine.drop_error()?;
 engine.run()?;

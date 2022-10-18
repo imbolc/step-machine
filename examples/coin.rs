@@ -1,18 +1,14 @@
-use anyhow::{ensure, Result};
-use derive_more::From;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::io;
 
-use step_machine::{Engine, State};
+use step_machine::{Engine, Error, JsonStore, Step, StepResult};
 
-type StepResult = Result<Option<Machine>>;
-
-fn main() -> Result<()> {
+fn main() -> Result<(), Error> {
     env_logger::init();
-    let init_state = FirstToss.into();
-    let mut engine = Engine::<Machine>::new(init_state)?.restore()?;
-    engine.drop_error()?;
-    engine.run()?;
+    let store = JsonStore::new().map_err(|e| Error::Store(Box::new(e)))?;
+    let engine = Engine::new(store, Box::new(FirstToss))?.restore()?;
+    engine.drop_error()?.run()?;
     Ok(())
 }
 
@@ -32,30 +28,15 @@ impl Coin {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, From)]
-enum Machine {
-    FirstToss(FirstToss),
-    SecondToss(SecondToss),
-}
-
-impl State<Machine> for Machine {
-    type Error = anyhow::Error;
-
-    fn next(self) -> StepResult {
-        match self {
-            Machine::FirstToss(state) => state.next(),
-            Machine::SecondToss(state) => state.next(),
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 struct FirstToss;
-impl FirstToss {
-    fn next(self) -> StepResult {
+
+#[typetag::serde]
+impl Step for FirstToss {
+    fn run(self: Box<Self>) -> StepResult {
         let first_coin = Coin::toss();
         println!("First coin: {:?}", first_coin);
-        Ok(Some(SecondToss { first_coin }.into()))
+        Ok(Some(Box::new(SecondToss { first_coin })))
     }
 }
 
@@ -63,12 +44,20 @@ impl FirstToss {
 struct SecondToss {
     first_coin: Coin,
 }
-impl SecondToss {
-    fn next(self) -> StepResult {
+
+#[typetag::serde]
+impl Step for SecondToss {
+    fn run(self: Box<Self>) -> StepResult {
         let second_coin = Coin::toss();
         println!("Second coin: {:?}", second_coin);
-        ensure!(second_coin == self.first_coin, "Coins landed differently");
-        println!("Coins match");
-        Ok(None)
+        if second_coin == self.first_coin {
+            println!("Coins match");
+            Ok(None)
+        } else {
+            Err(Box::new(io::Error::new(
+                io::ErrorKind::Other,
+                "Coins landed differently",
+            )))
+        }
     }
 }

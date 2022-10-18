@@ -9,12 +9,8 @@
 //! as two states of our machine. Step logic is implemented in `State::next()` methods which
 //! return the next state or `None` for the last step (the full code is in `examples/coin.rs`).
 //! ```rust
-//! #[derive(Debug, Serialize, Deserialize, From)]
-//! enum Machine {
-//!     FirstToss(FirstToss),
-//!     SecondToss(SecondToss),
-//! }
 //!
+//! #[typetag::serde]
 //! #[derive(Debug, Serialize, Deserialize)]
 //! struct FirstToss;
 //! impl FirstToss {
@@ -25,6 +21,7 @@
 //!     }
 //! }
 //!
+//! #[typetag::serde]
 //! #[derive(Debug, Serialize, Deserialize)]
 //! struct SecondToss {
 //!     first_coin: Coin,
@@ -42,7 +39,7 @@
 //!
 //! Then we start our machine like this:
 //! ```rust
-//! let init_state = FirstToss.into();
+//! let state = FirstToss.into();
 //! let mut engine = Engine::<Machine>::new(init_state)?.restore()?;
 //! engine.drop_error()?;
 //! engine.run()?;
@@ -68,15 +65,11 @@
 //!
 //! Notice that, thanks to the `restore()`, our machine run from the step it was interrupted,
 //! knowing about the first coin landed on heads.
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::fmt;
-use std::io;
-use std::path::PathBuf;
-use store::Store;
+pub use json_store::JsonStore;
+use serde::{Deserialize, Serialize};
+use std::{error, fmt, io};
 
-mod store;
-
-type StdResult<T, E> = std::result::Result<T, E>;
+pub mod json_store;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -84,110 +77,131 @@ pub enum Error {
     IO(#[from] io::Error),
     #[error("Serde error: {0}")]
     Serde(#[from] serde_json::Error),
+    #[error("Store error: {0}")]
+    Store(#[source] BoxedError),
     #[error("{0}")]
     Step(String),
 }
 
-pub type Result<T> = StdResult<T, Error>;
+/// A shourtcut for the `Step::next` result
+pub type BoxedError = Box<dyn error::Error>;
+pub type StepResult = Result<Option<Box<dyn Step>>, BoxedError>;
+pub type BoxedStep = Box<dyn Step>;
 
-/// Represents state of a state machine M
-pub trait State<M: State<M>> {
-    type Error: fmt::Debug;
+/// A step of the machine should implement this trait
+#[typetag::serde]
+pub trait Step: fmt::Debug {
+    /// The method is called by the engine and could optionaly return the next step
+    fn run(self: Box<Self>) -> StepResult;
+}
 
-    /// Runs the current step and returns the next machine state or `None` if everything is done
-    fn next(self) -> StdResult<Option<M>, Self::Error>;
+pub trait Store: fmt::Debug {
+    type Error: error::Error + 'static;
+
+    fn load(&self) -> Result<Option<State>, Self::Error>;
+    fn save(&self, step: &State) -> Result<(), Self::Error>;
+    fn clean(&self) -> Result<(), Self::Error>;
 }
 
 /// Machine state with metadata to store
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct Step<M> {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct State {
     /// Current state of the machine
-    pub state: M,
+    step: Box<dyn Step>,
     /// An error if any
-    pub error: Option<String>,
-}
-
-impl<M> Step<M> {
-    fn new(state: M) -> Self {
-        Self { state, error: None }
-    }
+    error: Option<String>,
 }
 
 #[derive(Debug)]
-pub struct Engine<M> {
-    store: Store,
-    step: Step<M>,
+pub struct Engine<S: Store> {
+    store: S,
+    state: State,
 }
 
-impl<M> Engine<M>
-where
-    M: fmt::Debug + Serialize + DeserializeOwned + State<M>,
-{
-    /// Creates an Engine using initial state
-    pub fn new(state: M) -> Result<Self> {
-        let store: Store = Store::new()?;
-        let step = Step::new(state);
-        Ok(Self { store, step })
+impl Error {
+    fn store(e: impl error::Error + 'static) -> Self {
+        Self::Store(Box::new(e))
     }
+}
 
-    /// Use another store path
-    pub fn with_store_path(mut self, path: impl Into<PathBuf>) -> Self {
-        let path = path.into();
-        self.store.path = path;
-        self
+impl State {
+    fn new(step: BoxedStep, error: Option<String>) -> Self {
+        Self { step, error }
+    }
+}
+
+impl<S: Store> Engine<S> {
+    /// Creates an Engine using initial state
+    pub fn new(store: S, first_step: BoxedStep) -> Result<Self, Error> {
+        let state = State::new(first_step, None);
+        Ok(Self { store, state })
     }
 
     /// Restores an Engine from the previous run
-    pub fn restore(mut self) -> Result<Self> {
-        if let Some(step) = self.store.load()? {
-            self.step = step;
+    pub fn restore(mut self) -> Result<Self, Error> {
+        if let Some(state) = self.store.load().map_err(Error::store)? {
+            self.state = state;
         }
         Ok(self)
     }
 
+    /// Drops the previous error
+    pub fn drop_error(mut self) -> Result<Self, Error> {
+        self.state.error = None;
+        self.save()?;
+        Ok(self)
+    }
+
     /// Runs all steps to completion
-    pub fn run(mut self) -> Result<()> {
-        if let Some(e) = self.step.error.as_ref() {
+    pub fn run(mut self) -> Result<(), Error> {
+        if let Some(e) = self.state.error.as_ref() {
             return Err(crate::Error::Step(format!(
                 "Previous run resulted in an error: {} on step: {:?}",
-                e, self.step.state
+                e, self.state.step
             )));
         }
 
         loop {
-            log::info!("Running step: {:?}", &self.step.state);
-            let state_backup = serde_json::to_string(&self.step.state)?;
-            match self.step.state.next() {
-                Ok(state) => {
-                    if let Some(state) = state {
-                        self.step = Step::new(state); // TODO
-                        self.save()?;
-                    } else {
-                        log::info!("Finished successfully");
-                        self.store.clean()?;
-                        break;
-                    }
+            log::info!("Running step: {:?}", &self.state.step);
+            let step_backup = serde_json::to_string(&self.state.step)?;
+            match self.state.step.run() {
+                Ok(Some(step)) => {
+                    self.state.step = step;
+                    self.save()?;
+                }
+                Ok(None) => {
+                    log::info!("Finished successfully");
+                    self.store.clean().map_err(Error::store)?;
+                    break;
                 }
                 Err(e) => {
-                    self.step.state = serde_json::from_str(&state_backup)?;
-                    let err_str = format!("{:?}", e);
-                    self.step.error = Some(err_str.clone());
+                    self.state.step = serde_json::from_str(&step_backup)?;
+                    let err_str = error_chain(e);
+                    self.state.error = Some(err_str.clone());
                     self.save()?;
-                    return Err(crate::Error::Step(err_str));
+                    return Err(Error::Step(err_str));
                 }
-            }
+            };
         }
         Ok(())
     }
 
-    /// Drops the previous error
-    pub fn drop_error(&mut self) -> Result<()> {
-        self.step.error = None;
-        self.save()
-    }
-
-    fn save(&self) -> Result<()> {
-        self.store.save(&self.step)?;
+    fn save(&self) -> Result<(), Error> {
+        self.store.save(&self.state).map_err(Error::store)?;
         Ok(())
     }
+}
+
+/// A helper to format error with its source chain
+pub fn error_chain(e: BoxedError) -> String {
+    let mut s = e.to_string();
+    let mut current = e.as_ref().source();
+    if current.is_some() {
+        s.push_str("\nCaused by:");
+    }
+    while let Some(cause) = current {
+        s.push_str(&format!("\n\t{}", cause));
+        current = cause.source();
+    }
+    s
 }
