@@ -1,4 +1,4 @@
-use super::{Result, Step};
+use super::{Error, Step};
 use std::env::current_exe;
 use std::fs;
 use std::io;
@@ -12,20 +12,20 @@ pub(crate) struct Store {
 // impl<M: State<M>> Store<M> {
 impl Store {
     /// Creates a new store, using `<exe_stem>.json` file
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self, Error> {
         let mut path = exe_stem()?;
         path.set_extension("json");
         Ok(Self { path })
     }
 
     /// Saves the step
-    pub fn save<M: serde::Serialize>(&self, step: &Step<M>) -> Result<()> {
+    pub fn save<M: serde::Serialize>(&self, step: &Step<M>) -> Result<(), Error> {
         let text = serde_json::to_string_pretty(&step)?;
         Ok(fs::write(&self.path, text)?)
     }
 
     /// Loads a step
-    pub fn load<M: serde::de::DeserializeOwned>(&self) -> Result<Option<Step<M>>> {
+    pub fn load<M: serde::de::DeserializeOwned>(&self) -> Result<Option<Step<M>>, Error> {
         let text = match fs::read_to_string(&self.path) {
             Ok(x) => Ok(x),
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -35,7 +35,7 @@ impl Store {
     }
 
     /// Cleans the store by removing the json file
-    pub fn clean(&self) -> Result<()> {
+    pub fn clean(&self) -> Result<(), Error> {
         fs::remove_file(&self.path)?;
         Ok(())
     }

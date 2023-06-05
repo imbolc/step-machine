@@ -76,8 +76,6 @@ use store::Store;
 
 mod store;
 
-type StdResult<T, E> = std::result::Result<T, E>;
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("IO error: {0}")]
@@ -88,14 +86,12 @@ pub enum Error {
     Step(String),
 }
 
-pub type Result<T> = StdResult<T, Error>;
-
 /// Represents state of a state machine M
-pub trait State<M: State<M>> {
-    type Error: fmt::Debug;
+pub trait State<M> {
+    type Error: Into<Box<dyn std::error::Error + 'static>>;
 
     /// Runs the current step and returns the next machine state or `None` if everything is done
-    fn next(self) -> StdResult<Option<M>, Self::Error>;
+    fn next(self) -> Result<Option<M>, Self::Error>;
 }
 
 /// Machine state with metadata to store
@@ -124,7 +120,7 @@ where
     M: fmt::Debug + Serialize + DeserializeOwned + State<M>,
 {
     /// Creates an Engine using initial state
-    pub fn new(state: M) -> Result<Self> {
+    pub fn new(state: M) -> Result<Self, Error> {
         let store: Store = Store::new()?;
         let step = Step::new(state);
         Ok(Self { store, step })
@@ -138,7 +134,7 @@ where
     }
 
     /// Restores an Engine from the previous run
-    pub fn restore(mut self) -> Result<Self> {
+    pub fn restore(mut self) -> Result<Self, Error> {
         if let Some(step) = self.store.load()? {
             self.step = step;
         }
@@ -146,7 +142,7 @@ where
     }
 
     /// Runs all steps to completion
-    pub fn run(mut self) -> Result<()> {
+    pub fn run(mut self) -> Result<(), Error> {
         if let Some(e) = self.step.error.as_ref() {
             return Err(crate::Error::Step(format!(
                 "Previous run resulted in an error: {} on step: {:?}",
@@ -170,7 +166,7 @@ where
                 }
                 Err(e) => {
                     self.step.state = serde_json::from_str(&state_backup)?;
-                    let err_str = format!("{:?}", e);
+                    let err_str = error_chain(&*e.into());
                     self.step.error = Some(err_str.clone());
                     self.save()?;
                     return Err(crate::Error::Step(err_str));
@@ -181,13 +177,59 @@ where
     }
 
     /// Drops the previous error
-    pub fn drop_error(&mut self) -> Result<()> {
+    pub fn drop_error(&mut self) -> Result<(), Error> {
         self.step.error = None;
         self.save()
     }
 
-    fn save(&self) -> Result<()> {
+    fn save(&self) -> Result<(), Error> {
         self.store.save(&self.step)?;
         Ok(())
+    }
+}
+
+/// A helper function to format an error with its source chain.
+///
+/// This function works with both `&Error` and `Box<dyn Error>`. When passing a boxed error,
+/// make sure to dereference it using `&*e`.
+pub fn error_chain(e: &(dyn std::error::Error + 'static)) -> String {
+    use std::fmt::Write as _;
+
+    let mut s = e.to_string();
+    let mut current = e.source();
+    if current.is_some() {
+        s.push_str("\nCaused by:");
+    }
+    while let Some(cause) = current {
+        write!(s, "\n\t{}", cause).ok();
+        current = cause.source();
+    }
+    s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn both_stderror_and_anyhow_work() {
+        struct Foo;
+        struct Bar;
+
+        impl State<()> for Foo {
+            type Error = anyhow::Error;
+
+            fn next(self) -> Result<Option<()>, Self::Error> {
+                todo!()
+            }
+        }
+
+        impl State<()> for Bar {
+            type Error = std::io::Error;
+
+            fn next(self) -> Result<Option<()>, Self::Error> {
+                todo!()
+            }
+        }
     }
 }

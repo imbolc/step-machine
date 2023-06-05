@@ -20,6 +20,6 @@ thiserror = "1"
 [dev-dependencies]
 anyhow = "1"
 derive_more = "0.99"
-env_logger = "0.9"
+env_logger = "0.10"
 rand = "0.8"
 rusty-hook = "0.11"

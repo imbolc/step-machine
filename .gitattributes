@@ -1,0 +1,2 @@
+# Don't show `Cargo.lock` in `git diff`
+Cargo.lock -diff
